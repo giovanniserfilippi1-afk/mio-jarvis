@@ -1,94 +1,42 @@
-import http from '@ohos.net.http';
+import os
+import google.generativeai as genai
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
-// Modello della risposta per evitare errori di compilazione
-interface JarvisResponse {
-  reply: string;
-}
+# Configurazione Google Gemini
+# La chiave viene letta dalle variabili d'ambiente di Render (GOOGLE_API_KEY)
+genai.configure(api_key=os.environ.get("AIzaSyCPieozxxVAmm4oU2Y4JKjgpLUqk9GTvU4"))
 
-@Entry
-@Component
-struct Index {
-  @State message: string = 'In attesa, Signore';
-  @State isConnecting: boolean = false;
-  @State arcColor: string = '#00FFFF';
+app = Flask(__name__)
+CORS(app) # Fondamentale per far parlare l'orologio con il server
 
-  build() {
-    Column() {
-      // Reattore Arc (Bottone)
-      Stack() {
-        Circle()
-          .width(160)
-          .height(160)
-          .fill(Color.Transparent)
-          .stroke(this.isConnecting ? '#FF4500' : this.arcColor)
-          .strokeWidth(8)
-          .shadow({ radius: 20, color: this.arcColor })
+# Inizializzazione modello
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+@app.route('/ask', methods=['POST'])
+def ask():
+    try:
+        # Ricezione comando
+        data = request.json
+        domanda = data.get("command", "Nessun comando ricevuto")
         
-        Text(this.isConnecting ? "..." : "JARVIS")
-          .fontSize(22)
-          .fontColor(this.arcColor)
-          .fontWeight(FontWeight.Bold)
-      }
-      .margin({ top: 50 })
-      .onClick(() => {
-        this.inviaComandoAlCloud("Status sistemi");
-      })
-
-      // Risposta testuale
-      Scroll() {
-        Text(this.message)
-          .fontSize(16)
-          .fontColor(Color.White)
-          .textAlign(TextAlign.Center)
-          .width('90%')
-      }
-      .margin({ top: 20 })
-      .height(120)
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(Color.Black)
-  }
-
-  inviaComandoAlCloud(comando: string) {
-    if (this.isConnecting) return;
-    
-    this.isConnecting = true;
-    this.message = "Contatto il Cloud...";
-    
-    let httpRequest = http.createHttp();
-    
-    // SOSTITUISCI CON IL TUO LINK REALE DI RENDER
-    let url = "https://AIzaSyCPieozxxVAmm4oU2Y4JKjgpLUqk9GTvU4/ask";
-
-    httpRequest.request(
-      url,
-      {
-        method: http.RequestMethod.POST,
-        header: { 'Content-Type': 'application/json' },
-        extraData: JSON.stringify({ "command": comando }),
-        expectDataType: http.HttpDataType.STRING // Dice all'app di aspettarsi testo
-      },
-      (err, data) => {
-        this.isConnecting = false;
+        # Prompt per la personalità di Jarvis
+        prompt = f"Rispondi come Jarvis, l'assistente di Iron Man. Sii conciso, massimo 20 parole: {domanda}"
         
-        if (!err && data.responseCode === 200) {
-          try {
-            // Conversione sicura del JSON
-            const result = JSON.parse(data.result as string) as JarvisResponse;
-            this.message = result.reply;
-            this.arcColor = '#00FFFF';
-          } catch (e) {
-            this.message = "Errore decodifica risposta";
-          }
-        } else {
-          this.message = "Errore: Connessione fallita";
-          this.arcColor = '#FF0000';
-        }
+        # Generazione risposta
+        response = model.generate_content(prompt)
         
-        // Pulizia memoria
-        httpRequest.destroy();
-      }
-    );
-  }
-}
+        # PULIZIA: Estraiamo solo il testo ignorando i metadati
+        risposta_pulita = response.text.strip()
+        
+        # Invio risposta al dispositivo
+        return jsonify({"reply": risposta_pulita})
+    
+    except Exception as e:
+        print(f"Errore: {e}")
+        return jsonify({"reply": "Signore, i sistemi di comunicazione sono offline."}), 500
+
+if __name__ == '__main__':
+    # Porta richiesta da Render
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
